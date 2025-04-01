@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pelota que rueda con fricción y aro de baloncesto</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #f0f0f0; /* Un fondo gris claro */
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+
+        .contenedor-juego {
+            position: relative;
+            width: 80%;
+            height: 80%;
+            background-color: white;
+            border: 1px solid #ccc;
+            overflow: hidden;
+        }
+
+        .pelota {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background-color: blue;
+            border-radius: 50%;
+            cursor: grab; /* Cambiar el cursor al interactuar */
+        }
+
+        .aro-soporte {
+            position: absolute;
+            width: 120px;
+            height: 20px;
+            background-color: #888;
+            border-radius: 5px;
+            top: 30%;
+            left: 70%;
+            transform: translate(-50%, -50%);
+            z-index: 5;
+        }
+
+        .aro {
+            position: absolute;
+            width: 80px;
+            height: 5px;
+            background-color: orange;
+            border-radius: 5px;
+            top: calc(30% + 10px); /* Colocado debajo del soporte */
+            left: 70%;
+            transform: translate(-50%, -50%);
+            z-index: 6;
+        }
+
+        .tablero {
+            position: absolute;
+            width: 60px;
+            height: 100px;
+            background-color: lightgray;
+            top: calc(30% - 50px);
+            left: calc(70% - 60px);
+            z-index: 4;
+        }
+
+        .puntos {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 24px;
+            color: black;
+            z-index: 100;
+        }
+
+        .mensaje {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 20px;
+            color: green;
+            display: none;
+            z-index: 101;
+        }
+    </style>
+</head>
+<body>
+    <div class="contenedor-juego">
+        <div class="puntos" id="puntos">Puntos: 0</div>
+        <div class="mensaje" id="mensaje">¡Canasta!</div>
+        <div class="tablero"></div>
+        <div class="aro-soporte"></div>
+        <div class="aro" id="aro"></div>
+        <div class="pelota" id="pelota"></div>
+    </div>
+
+    <script>
+        const contenedorJuego = document.querySelector('.contenedor-juego');
+        const pelota = document.getElementById('pelota');
+        const aro = document.getElementById('aro');
+        const puntosDisplay = document.getElementById('puntos');
+        const mensajeDisplay = document.getElementById('mensaje');
+
+        let posX = contenedorJuego.offsetWidth / 4 - 25;  // Posición inicial a la izquierda
+        let posY = contenedorJuego.offsetHeight - 50; // Posición inicial en el suelo
+        let velocidadY = 0;
+        let velocidadX = 0;
+        let friccion = 0.98;
+        const gravedad = 0.5; // Ajustar gravedad para un espacio más pequeño
+        const coeficienteRebote = 0.7;
+        const suelo = contenedorJuego.offsetHeight - pelota.offsetHeight;
+        const limiteIzq = 0;
+        const limiteDer = contenedorJuego.offsetWidth - pelota.offsetWidth;
+        let tiempo = 0;
+        let puntos = 0;
+        let enSuelo = true;
+        const velocidadSalto = -12; // Ajustar velocidad de salto
+
+        // Posición del aro de baloncesto (relativa al contenedor)
+        const aroRect = aro.getBoundingClientRect();
+        const contenedorRect = contenedorJuego.getBoundingClientRect();
+        const aroPosX = aroRect.left - contenedorRect.left + aroRect.width / 2;
+        const aroPosY = aroRect.top - contenedorRect.top + aroRect.height / 2;
+        const anchoAro = aroRect.width;
+        const altoAro = aroRect.height;
+
+        // Control de teclas
+        let teclas = {};
+        window.addEventListener('keydown', (e) => teclas[e.key] = true);
+        window.addEventListener('keyup', (e) => teclas[e.key] = false);
+
+        // Variables para el arrastre de la pelota
+        let isDragging = false;
+        let offsetX, offsetY;
+
+        pelota.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            pelota.style.cursor = 'grabbing';
+            offsetX = e.clientX - pelota.getBoundingClientRect().left;
+            offsetY = e.clientY - pelota.getBoundingClientRect().top;
+            velocidadX = 0; // Detener el movimiento al empezar a arrastrar
+            velocidadY = 0;
+            enSuelo = false; // Ya no está en el suelo al arrastrar
+        });
+
+        contenedorJuego.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            posX = e.clientX - contenedorRect.left - offsetX;
+            posY = e.clientY - contenedorRect.top - offsetY;
+
+            // Mantener la pelota dentro de los límites del contenedor
+            if (posX < limiteIzq) posX = limiteIzq;
+            if (posX > limiteDer) posX = limiteDer;
+            if (posY < 0) posY = 0;
+            if (posY > contenedorJuego.offsetHeight - pelota.offsetHeight) posY = contenedorJuego.offsetHeight - pelota.offsetHeight;
+
+            pelota.style.left = `${posX}px`;
+            pelota.style.top = `${posY}px`;
+        });
+
+        contenedorJuego.addEventListener('mouseup', () => {
+            if (!isDragging) return;
+            isDragging = false;
+            pelota.style.cursor = 'grab';
+            // Al soltar, la pelota estará sujeta a la gravedad
+        });
+
+        function moverPelota() {
+            if (!isDragging) {
+                tiempo += 0.016;
+
+                // Movimiento horizontal por teclas
+                if (teclas['a'] || teclas['ArrowLeft']) {
+                    velocidadX = -3;
+                } else if (teclas['d'] || teclas['ArrowRight']) {
+                    velocidadX = 3;
+                }
+
+                if (enSuelo) {
+                    velocidadX *= friccion;
+                    if (Math.abs(velocidadX) < 0.1) velocidadX = 0; // Detener si es muy lento
+                }
+
+                if ((teclas['w'] || teclas['ArrowUp']) && enSuelo) {
+                    velocidadY = velocidadSalto;
+                    enSuelo = false;
+                }
+
+                posX += velocidadX;
+
+                // Limitar el movimiento en los bordes horizontales
+                if (posX < limiteIzq) {
+                    posX = limiteIzq;
+                    velocidadX *= -coeficienteRebote;
+                } else if (posX > limiteDer) {
+                    posX = limiteDer;
+                    velocidadX *= -coeficienteRebote;
+                }
+
+                // Aplicar gravedad si no está en el suelo
+                if (!enSuelo) {
+                    velocidadY += gravedad;
+                }
+
+                posY += velocidadY;
+
+                // Detectar colisión con el suelo
+                if (posY >= suelo) {
+                    posY = suelo;
+                    velocidadY = 0;
+                    enSuelo = true;
+                    velocidadX *= friccion;
+                    if (Math.abs(velocidadX) < 0.1) velocidadX = 0;
+                }
+
+                // Detectar si la pelota está cerca del aro (para simplificar la detección)
+                const pelotaRect = pelota.getBoundingClientRect();
+                const centroPelotaX = pelotaRect.left - contenedorRect.left + pelotaRect.width / 2;
+                const centroPelotaY = pelotaRect.top - contenedorRect.top + pelotaRect.height / 2;
+
+                if (centroPelotaY > aroPosY - altoAro / 2 && centroPelotaY < aroPosY + altoAro &&
+                    centroPelotaX > aroPosX - anchoAro / 2 && centroPelotaX < aroPosX + anchoAro / 2 &&
+                    velocidadY > 0 // Asegurarse de que está cayendo
+                ) {
+                    puntos++;
+                    puntosDisplay.innerText = `Puntos: ${puntos}`;
+                    mensajeDisplay.style.display = 'block';
+                    setTimeout(() => {
+                        mensajeDisplay.style.display = 'none';
+                    }, 1500);
+                    // Reiniciar la posición de la pelota (opcional, puedes cambiarlo)
+                    posX = contenedorJuego.offsetWidth / 4 - 25;
+                    posY = contenedorJuego.offsetHeight - 50;
+                    velocidadY = 0;
+                    velocidadX = 0;
+                    enSuelo = true;
+                }
+
+                pelota.style.left = `${posX}px`;
+                pelota.style.top = `${posY}px`;
+            }
+
+            requestAnimationFrame(moverPelota);
+        }
+
+        // Inicializar la posición de la pelota en el suelo
+        pelota.style.left = `${posX}px`;
+        pelota.style.top = `${posY}px`;
+
+        moverPelota();
+    </script>
+</body>
+</html>
